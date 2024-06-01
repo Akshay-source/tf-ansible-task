@@ -1,0 +1,59 @@
+---
+
+- name: Install postgres
+  hosts: all
+  become: true
+  tasks:
+    - name: Refresh ubuntu repo
+      apt:
+        update_cache: yes
+
+    - name: verify the available repo
+      shell: apt show postgresql
+      register: my_output
+
+    - name: displaying my output
+      debug:
+        msg: "{{ my_output.stdout  }}"
+
+    - name: installing postgres latest version
+      apt:
+        name:
+          - postgresql
+          - postgresql-contrib
+
+    - name: Copy SQL initialization script to the server
+      copy:
+        src: initialize_db.sql
+        dest: /tmp/initialize_db.sql
+
+    - name: Execute SQL script to initialize the database
+      shell: |
+        sudo -u postgres psql -d postgres -f /tmp/initialize_db.sql
+
+    - name: Removing the init file after execution
+      file:
+        path: /tmp/initialize_db.sql
+        state: absent
+
+    - name: Ensure PostgreSQL listens on all IP addresses
+      lineinfile:
+        path: /etc/postgresql/16/main/postgresql.conf  # Adjust this path according to your PostgreSQL version and installation path
+        state: present
+        regexp: '^#listen_addresses ='
+        line: "listen_addresses = '*'"
+      notify: Restart PostgreSQL service
+
+    - name: Allow all TCP/IP connections in pg_hba.conf
+      blockinfile:
+        path: /etc/postgresql/16/main/pg_hba.conf  # Adjust this path according to your PostgreSQL version and installation path
+        block: |
+          # Allow all TCP/IP connections
+          host    all             all             0.0.0.0/0               md5
+      notify: Restart PostgreSQL service
+
+  handlers:
+    - name: Restart PostgreSQL service
+      service:
+        name: postgresql
+        state: restarted
